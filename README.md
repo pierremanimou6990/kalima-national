@@ -173,8 +173,20 @@ pour y participer.
   rattaché à la personne qui l'a fait.
 - Le président régional ou national peut réinitialiser un mot de passe
   oublié à tout moment depuis son espace.
+- **Chaque utilisateur peut aussi changer lui-même son propre email et son
+  mot de passe** depuis le bouton "⚙️ Mon compte", visible en haut de son
+  espace une fois connecté. C'est ainsi que le président national peut
+  remplacer les identifiants provisoires par les siens dès sa première
+  connexion.
 - La variable `JWT_SECRET` doit rester secrète — c'est elle qui garantit
   que personne ne peut fabriquer une fausse session de connexion.
+
+## Liste des inscrits à un camp
+
+Depuis la fiche d'un camp (espace national → Camps → Gérer → Inscriptions
+reçues), la liste des jeunes inscrits peut être téléchargée sous deux
+formats : un **PDF** prêt à imprimer ou partager tel quel, ou un fichier
+**CSV** à ouvrir dans Excel pour retravailler les données.
 
 ## Lancer en local (facultatif)
 

@@ -297,6 +297,87 @@ function logoutButton() {
   return btn;
 }
 
+function accountButton(onBackFn) {
+  const btn = el(`<button class="btn btn-ghost btn-sm">⚙️ Mon compte</button>`);
+  btn.onclick = () => renderMonCompte(onBackFn);
+  return btn;
+}
+
+function renderMonCompte(onBack) {
+  const session = getSession();
+  app.innerHTML = "";
+  app.appendChild(topBar("Mon compte", onBack));
+  const wrap = el(`<div class="container"></div>`);
+  wrap.appendChild(el(`<p class="hint-text">Connecté en tant que <b>${escapeHtml(session.user.nom)}</b>${session.user.region ? " · " + escapeHtml(session.user.region) : ""}${session.user.eglise ? " · " + escapeHtml(session.user.eglise) : ""}</p>`));
+
+  // --- Changer l'email ---
+  const cardEmail = el(`<div class="card"><div class="card-head"><span class="label">Changer mon email</span></div></div>`);
+  const fEmailActuel = el(`<label class="field"><span class="label-text">Email actuel</span><input value="${escapeHtml(session.user.email)}" disabled /></label>`);
+  const fEmailNouveau = el(`<label class="field"><span class="label-text">Nouvel email</span><input type="email" placeholder="nouveau@mail.com" /></label>`);
+  const fEmailPass = el(`<label class="field"><span class="label-text">Mot de passe actuel (pour confirmer)</span><input type="password" /></label>`);
+  cardEmail.appendChild(fEmailActuel); cardEmail.appendChild(fEmailNouveau); cardEmail.appendChild(fEmailPass);
+  const emailMsg = el(`<p class="error-text" style="display:none;"></p>`);
+  cardEmail.appendChild(emailMsg);
+  const emailBtn = el(`<button class="btn btn-gold">Mettre à jour l'email</button>`);
+  emailBtn.onclick = async () => {
+    const nouveau_email = fEmailNouveau.querySelector("input").value.trim();
+    const mot_de_passe = fEmailPass.querySelector("input").value;
+    if (!nouveau_email || !mot_de_passe) return;
+    emailBtn.disabled = true;
+    emailMsg.style.display = "none";
+    try {
+      const { token, user } = await api("/api/auth/change-email", { method: "POST", body: JSON.stringify({ nouveau_email, mot_de_passe }) });
+      setSession({ token, user });
+      emailMsg.style.color = "var(--success)";
+      emailMsg.textContent = "✓ Email mis à jour avec succès.";
+      emailMsg.style.display = "block";
+      fEmailActuel.querySelector("input").value = user.email;
+      fEmailNouveau.querySelector("input").value = "";
+      fEmailPass.querySelector("input").value = "";
+    } catch (e) {
+      emailMsg.style.color = "var(--danger)";
+      emailMsg.textContent = e.message;
+      emailMsg.style.display = "block";
+    }
+    emailBtn.disabled = false;
+  };
+  cardEmail.appendChild(emailBtn);
+  wrap.appendChild(cardEmail);
+
+  // --- Changer le mot de passe ---
+  const cardPass = el(`<div class="card"><div class="card-head"><span class="label">Changer mon mot de passe</span></div></div>`);
+  const fAncien = el(`<label class="field"><span class="label-text">Mot de passe actuel</span><input type="password" /></label>`);
+  const fNouveau = el(`<label class="field"><span class="label-text">Nouveau mot de passe</span><input type="password" placeholder="au moins 6 caractères" /></label>`);
+  cardPass.appendChild(fAncien); cardPass.appendChild(fNouveau);
+  const passMsg = el(`<p class="error-text" style="display:none;"></p>`);
+  cardPass.appendChild(passMsg);
+  const passBtn = el(`<button class="btn btn-gold">Mettre à jour le mot de passe</button>`);
+  passBtn.onclick = async () => {
+    const ancien = fAncien.querySelector("input").value;
+    const nouveau = fNouveau.querySelector("input").value;
+    if (!ancien || !nouveau) return;
+    passBtn.disabled = true;
+    passMsg.style.display = "none";
+    try {
+      await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ ancien, nouveau }) });
+      passMsg.style.color = "var(--success)";
+      passMsg.textContent = "✓ Mot de passe mis à jour avec succès.";
+      passMsg.style.display = "block";
+      fAncien.querySelector("input").value = "";
+      fNouveau.querySelector("input").value = "";
+    } catch (e) {
+      passMsg.style.color = "var(--danger)";
+      passMsg.textContent = e.message;
+      passMsg.style.display = "block";
+    }
+    passBtn.disabled = false;
+  };
+  cardPass.appendChild(passBtn);
+  wrap.appendChild(cardPass);
+
+  app.appendChild(wrap);
+}
+
 // ============ ESPACE RESPONSABLE D'ÉGLISE ============
 function renderEgliseSetup() {
   const session = getSession();
@@ -332,6 +413,7 @@ async function renderEgliseRoster() {
   const session = getSession();
   app.innerHTML = "";
   const bar = topBar(session.user.eglise, () => { clearSession(); renderHome(); });
+  bar.appendChild(accountButton(renderEgliseRoster));
   bar.appendChild(logoutButton());
   app.appendChild(bar);
   const wrap = el(`<div class="container"><p class="empty">Chargement…</p></div>`);
@@ -458,6 +540,7 @@ function renderRegionalMenu() {
   const session = getSession();
   app.innerHTML = "";
   const bar = topBar(`Région ${session.user.region}`, () => { clearSession(); renderHome(); });
+  bar.appendChild(accountButton(renderRegionalMenu));
   bar.appendChild(logoutButton());
   app.appendChild(bar);
   const wrap = el(`<div class="container"></div>`);
@@ -716,6 +799,7 @@ async function renderRegionalCamps() {
 function renderNationalMenu() {
   app.innerHTML = "";
   const bar = topBar("Espace national", () => { clearSession(); renderHome(); });
+  bar.appendChild(accountButton(renderNationalMenu));
   bar.appendChild(logoutButton());
   app.appendChild(bar);
   const wrap = el(`<div class="container"></div>`);
@@ -1028,7 +1112,31 @@ async function renderInscriptionsCamp(camp) {
   wrap.innerHTML = "";
   wrap.appendChild(el(`<p class="hint-text">${inscriptions.length} inscrit${inscriptions.length > 1 ? "s" : ""}</p>`));
 
-  const dlBtn = el(`<button class="btn btn-gold" style="margin-bottom:16px;">⬇ Télécharger (CSV)</button>`);
+  const btnRow = el(`<div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;"></div>`);
+
+  const pdfBtn = el(`<button class="btn btn-gold">📄 Télécharger en PDF</button>`);
+  pdfBtn.onclick = async () => {
+    pdfBtn.disabled = true;
+    try {
+      const session = getSession();
+      const res = await fetch(`/api/camps/${camp.id}/inscriptions/pdf`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Erreur lors de la génération du PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `inscrits-${camp.titre.replace(/\s+/g, "_")}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.message);
+    }
+    pdfBtn.disabled = false;
+  };
+  btnRow.appendChild(pdfBtn);
+
+  const dlBtn = el(`<button class="btn btn-ghost">⬇ Télécharger (CSV)</button>`);
   dlBtn.onclick = () => {
     const header = "Nom,Téléphone,Église,Région\n";
     const lines = inscriptions.map((i) => [i.nom, i.telephone, i.eglise, i.region].map((v) => `"${(v || "").replace(/"/g, '""')}"`).join(","));
@@ -1040,7 +1148,8 @@ async function renderInscriptionsCamp(camp) {
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   };
-  wrap.appendChild(dlBtn);
+  btnRow.appendChild(dlBtn);
+  wrap.appendChild(btnRow);
 
   if (inscriptions.length === 0) {
     wrap.appendChild(el(`<p class="empty">Aucune inscription reçue pour ce camp.</p>`));

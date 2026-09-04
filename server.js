@@ -4,6 +4,7 @@ const { createClient } = require("@supabase/supabase-js");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const PDFDocument = require("pdfkit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -96,6 +97,22 @@ app.post("/api/auth/change-password", auth(), async (req, res) => {
   const password_hash = await bcrypt.hash(nouveau, 10);
   await supabase.from("users").update({ password_hash }).eq("id", user.id);
   res.json({ ok: true });
+});
+
+app.post("/api/auth/change-email", auth(), async (req, res) => {
+  const { mot_de_passe, nouveau_email } = req.body || {};
+  if (!nouveau_email || !nouveau_email.includes("@")) return res.status(400).json({ error: "Email invalide" });
+  const { data: user } = await supabase.from("users").select("*").eq("id", req.user.id).single();
+  if (!user) return res.status(404).json({ error: "Utilisateur introuvable" });
+  const ok = await bcrypt.compare(mot_de_passe || "", user.password_hash);
+  if (!ok) return res.status(401).json({ error: "Mot de passe incorrect" });
+  const email = nouveau_email.toLowerCase().trim();
+  const { data: existing } = await supabase.from("users").select("id").eq("email", email).neq("id", user.id).limit(1);
+  if (existing && existing.length > 0) return res.status(400).json({ error: "Cet email est déjà utilisé par un autre compte" });
+  const { data: updated, error } = await supabase.from("users").update({ email }).eq("id", user.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  const token = signToken(updated);
+  res.json({ token, user: { id: updated.id, role: updated.role, region: updated.region, nom: updated.nom, eglise: updated.eglise, email: updated.email } });
 });
 
 // ================= GESTION DES COMPTES =================
@@ -461,6 +478,65 @@ app.get("/api/camps/:id/inscriptions", auth("national"), async (req, res) => {
     .order("created_at", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ inscriptions: data });
+});
+
+app.get("/api/camps/:id/inscriptions/pdf", auth("national"), async (req, res) => {
+  const { data: camp } = await supabase.from("camps").select("titre").eq("id", req.params.id).single();
+  const { data: inscriptions, error } = await supabase
+    .from("inscriptions_camp")
+    .select("*")
+    .eq("camp_id", req.params.id)
+    .order("region", { ascending: true })
+    .order("nom", { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+
+  const titre = camp ? camp.titre : "Camp";
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="inscrits-${titre.replace(/[^a-z0-9]+/gi, "_")}.pdf"`);
+
+  const doc = new PDFDocument({ margin: 50, size: "A4" });
+  doc.pipe(res);
+
+  doc.fontSize(18).fillColor("#1F3A5F").text("Mission Kalima — Jeunesse Nationale", { align: "center" });
+  doc.moveDown(0.3);
+  doc.fontSize(14).fillColor("#22262B").text(`Liste des inscrits — ${titre}`, { align: "center" });
+  doc.moveDown(0.2);
+  doc.fontSize(10).fillColor("#8A8266").text(`${inscriptions.length} inscrit${inscriptions.length > 1 ? "s" : ""} · Édité le ${new Date().toLocaleDateString("fr-FR")}`, { align: "center" });
+  doc.moveDown(1.2);
+
+  const colX = { nom: 50, tel: 220, eglise: 330, region: 460 };
+  function drawHeader(y) {
+    doc.fontSize(10).fillColor("#fff");
+    doc.rect(50, y, 495, 22).fill("#1F3A5F");
+    doc.fillColor("#fff");
+    doc.text("Nom", colX.nom + 5, y + 6, { width: 160 });
+    doc.text("Téléphone", colX.tel + 5, y + 6, { width: 100 });
+    doc.text("Église", colX.eglise + 5, y + 6, { width: 120 });
+    doc.text("Région", colX.region + 5, y + 6, { width: 80 });
+    return y + 22;
+  }
+
+  let y = drawHeader(doc.y);
+  doc.fontSize(9);
+  inscriptions.forEach((i, idx) => {
+    if (y > 760) {
+      doc.addPage();
+      y = drawHeader(50);
+    }
+    if (idx % 2 === 0) doc.rect(50, y, 495, 20).fill("#F3EFE3");
+    doc.fillColor("#22262B");
+    doc.text(i.nom || "", colX.nom + 5, y + 5, { width: 160 });
+    doc.text(i.telephone || "—", colX.tel + 5, y + 5, { width: 100 });
+    doc.text(i.eglise || "—", colX.eglise + 5, y + 5, { width: 120 });
+    doc.text(i.region || "—", colX.region + 5, y + 5, { width: 80 });
+    y += 20;
+  });
+
+  if (inscriptions.length === 0) {
+    doc.fillColor("#8A8266").text("Aucune inscription reçue pour ce camp.", 50, y + 10);
+  }
+
+  doc.end();
 });
 
 // ================= COMMUNIQUÉS =================
