@@ -397,11 +397,11 @@ app.get("/api/camps", async (req, res) => {
 });
 
 app.post("/api/camps", auth("national"), async (req, res) => {
-  const { titre, theme, date_debut, date_fin, lieu, description } = req.body || {};
+  const { titre, theme, reference, date_debut, date_fin, lieu, description } = req.body || {};
   if (!titre || !date_debut) return res.status(400).json({ error: "Titre et date de début requis" });
   const { data, error } = await supabase
     .from("camps")
-    .insert({ titre: titre.trim(), theme: theme || null, date_debut, date_fin: date_fin || null, lieu, description })
+    .insert({ titre: titre.trim(), theme: theme || null, reference: reference || null, date_debut, date_fin: date_fin || null, lieu, description })
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
@@ -409,10 +409,10 @@ app.post("/api/camps", auth("national"), async (req, res) => {
 });
 
 app.put("/api/camps/:id", auth("national"), async (req, res) => {
-  const { titre, theme, date_debut, date_fin, lieu, description } = req.body || {};
+  const { titre, theme, reference, date_debut, date_fin, lieu, description } = req.body || {};
   const { data, error } = await supabase
     .from("camps")
-    .update({ titre, theme: theme || null, date_debut, date_fin: date_fin || null, lieu, description })
+    .update({ titre, theme: theme || null, reference: reference || null, date_debut, date_fin: date_fin || null, lieu, description })
     .eq("id", req.params.id)
     .select()
     .single();

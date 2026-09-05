@@ -14,6 +14,7 @@ nouvelles tables sans toucher à tes données existantes :
 
 ```sql
 alter table camps add column if not exists theme text;
+alter table camps add column if not exists reference text;
 
 create table if not exists versements_region (
   id uuid primary key default gen_random_uuid(),
@@ -104,6 +105,7 @@ redéploiera automatiquement.
      id uuid primary key default gen_random_uuid(),
      titre text not null,
      theme text,
+     reference text,
      date_debut date not null,
      date_fin date,
      lieu text,
@@ -229,10 +231,13 @@ son église, puis saisit ses jeunes (nom, téléphone, email, fonction,
 photo).
 
 **Tout le monde**, même sans se connecter, peut voir sur l'écran
-d'accueil : les communiqués nationaux, la progression des cotisations de
-chaque région (pour motiver les régions en retard), les prochains camps
-avec un compte à rebours (J-N), le détail d'un camp (thème, orateurs,
-planning), le comité national, et s'inscrire pour participer à un camp.
+d'accueil : les communiqués nationaux (présentés comme des affiches, avec
+bandeau et date), la progression des cotisations de chaque région (pour
+motiver les régions en retard), les prochains camps sous forme d'affiche
+(titre, thème, référence biblique, lieu, date, compte à rebours J-N, et
+les orateurs en bandeau au pied de l'affiche), le comité national affiché
+comme une barre — le président à gauche, les autres membres à droite —
+et un formulaire pour s'inscrire à un camp.
 
 ## Sécurité — bon à savoir
 

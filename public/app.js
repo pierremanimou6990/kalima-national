@@ -124,15 +124,7 @@ async function renderHome() {
     const slot = wrap.querySelector("#communiques-slot");
     if (communiques.length) {
       slot.appendChild(el(`<h2 class="section-h">📢 Communiqués</h2>`));
-      communiques.slice(0, 5).forEach((c) => {
-        slot.appendChild(el(`
-          <div class="communique-card">
-            <div class="titre">${escapeHtml(c.titre)}</div>
-            <div class="date">${formatDateFr(c.created_at.slice(0, 10))}</div>
-            <div class="contenu">${escapeHtml(c.contenu)}</div>
-          </div>
-        `));
-      });
+      communiques.slice(0, 5).forEach((c) => slot.appendChild(communiquePoster(c)));
     }
   } catch (e) { /* silencieux */ }
 
@@ -160,7 +152,7 @@ async function renderHome() {
     const slot = wrap.querySelector("#camps-slot");
     if (upcoming.length) {
       slot.appendChild(el(`<h2 class="section-h">⛺ Prochains camps</h2>`));
-      upcoming.forEach((c) => slot.appendChild(campCardPublic(c)));
+      upcoming.forEach((c) => slot.appendChild(campPosterHome(c)));
     }
   } catch (e) { /* silencieux */ }
 
@@ -169,21 +161,83 @@ async function renderHome() {
     const slot = wrap.querySelector("#comite-slot");
     if (membres.length) {
       slot.appendChild(el(`<h2 class="section-h">🤝 Comité national des jeunes</h2>`));
-      membres.forEach((m) => {
-        slot.appendChild(el(`
-          <div class="row-item">
-            <div class="info">
-              ${avatarHtml(m.photo_url, m.nom)}
-              <div>
-                <div class="nom">${escapeHtml(m.nom)}</div>
-                <div class="meta">${escapeHtml(m.fonction || "—")}${m.telephone ? " · " + escapeHtml(m.telephone) : ""}</div>
-              </div>
-            </div>
-          </div>
-        `));
-      });
+      slot.appendChild(comiteBar(membres));
     }
   } catch (e) { /* silencieux */ }
+}
+
+function communiquePoster(c) {
+  return el(`
+    <div class="poster-communique">
+      <div class="poster-comm-head">
+        <span class="poster-comm-tag">Communiqué</span>
+        <span class="poster-comm-date">${formatDateFr(c.created_at.slice(0, 10))}</span>
+      </div>
+      <div class="poster-comm-body">
+        <div class="poster-comm-titre">${escapeHtml(c.titre)}</div>
+        <div class="poster-comm-contenu">${escapeHtmlMultiline(c.contenu)}</div>
+      </div>
+    </div>
+  `);
+}
+
+function campPosterHome(camp) {
+  const jours = joursRestants(camp.date_debut);
+  const poster = el(`
+    <div class="poster-camp">
+      <div class="poster-top">
+        <div class="poster-countdown">${jours === 0 ? "🎉 C'est aujourd'hui" : `J-<span class="n">${jours}</span>`}</div>
+        <div class="poster-titre">${escapeHtml(camp.titre)}</div>
+        ${camp.theme ? `<div class="poster-theme">« ${escapeHtml(camp.theme)} »</div>` : ""}
+        ${camp.reference ? `<div class="poster-reference">${escapeHtml(camp.reference)}</div>` : ""}
+        <div class="poster-meta">
+          <span>📅 ${formatDateFr(camp.date_debut)}${camp.date_fin ? " au " + formatDateFr(camp.date_fin) : ""}</span>
+          ${camp.lieu ? `<span>📍 ${escapeHtml(camp.lieu)}</span>` : ""}
+        </div>
+      </div>
+      <div class="poster-actions"><button class="btn btn-gold btn-sm voir-btn">Voir le détail</button></div>
+      ${camp.orateurs && camp.orateurs.length ? `
+        <div class="poster-orateurs-bar">
+          ${camp.orateurs.map((o) => `
+            <div class="orateur-item">
+              ${avatarHtml(o.photo_url, o.nom)}
+              <span class="nom">${escapeHtml(o.nom)}</span>
+            </div>
+          `).join("")}
+        </div>` : ""}
+    </div>
+  `);
+  poster.querySelector(".voir-btn").onclick = () => renderCampDetail(camp);
+  return poster;
+}
+
+function comiteBar(membres) {
+  const idxPresident = membres.findIndex((m) => (m.fonction || "").toLowerCase().includes("président"));
+  const president = idxPresident >= 0 ? membres[idxPresident] : membres[0];
+  const autres = membres.filter((m) => m.id !== president.id);
+
+  const bar = el(`
+    <div class="comite-bar">
+      <div class="president-item">
+        ${avatarHtml(president.photo_url, president.nom)}
+        <div>
+          <div class="nom">${escapeHtml(president.nom)}</div>
+          <div class="fonction">${escapeHtml(president.fonction || "Président")}</div>
+        </div>
+      </div>
+      <div class="others-row"></div>
+    </div>
+  `);
+  const row = bar.querySelector(".others-row");
+  autres.forEach((m) => {
+    row.appendChild(el(`
+      <div class="other-item">
+        ${avatarHtml(m.photo_url, m.nom)}
+        <span class="nom">${escapeHtml(m.nom)}</span>
+      </div>
+    `));
+  });
+  return bar;
 }
 
 function campCardPublic(camp) {
@@ -213,6 +267,7 @@ async function renderCampDetail(camp) {
 
   wrap.appendChild(el(`<div class="countdown">${jours <= 0 ? "🎉 En cours ou passé" : `J-<span class="n">${jours}</span>`}</div>`));
   if (camp.theme) wrap.appendChild(el(`<p class="camp-theme" style="font-size:16px; margin-bottom:8px;">« ${escapeHtml(camp.theme)} »</p>`));
+  if (camp.reference) wrap.appendChild(el(`<p class="hint-text" style="margin-top:-8px;">${escapeHtml(camp.reference)}</p>`));
   wrap.appendChild(el(`<p class="hint-text">📅 ${formatDateFr(camp.date_debut)}${camp.date_fin ? " au " + formatDateFr(camp.date_fin) : ""}${camp.lieu ? " · 📍 " + escapeHtml(camp.lieu) : ""}</p>`));
   if (camp.description) wrap.appendChild(el(`<p class="lead">${escapeHtmlMultiline(camp.description)}</p>`));
 
@@ -1009,6 +1064,7 @@ async function renderCampEditor(camp, onBack) {
   const card = el(`<div class="card"><div class="card-head"><span class="label">Informations générales</span></div></div>`);
   const fTitre = el(`<label class="field"><span class="label-text">Titre du camp</span><input placeholder="ex. Camp Biblique National 2026" /></label>`);
   const fTheme = el(`<label class="field"><span class="label-text">Thème (facultatif)</span><input placeholder="ex. Debout pour la mission" /></label>`);
+  const fReference = el(`<label class="field"><span class="label-text">Référence biblique (facultatif)</span><input placeholder="ex. Josué 1:9" /></label>`);
   const fDebut = el(`<label class="field"><span class="label-text">Date de début</span><input type="date" /></label>`);
   const fFin = el(`<label class="field"><span class="label-text">Date de fin (facultatif)</span><input type="date" /></label>`);
   const fLieu = el(`<label class="field"><span class="label-text">Lieu</span><input placeholder="ex. Kalima Pounthioun" /></label>`);
@@ -1029,12 +1085,13 @@ async function renderCampEditor(camp, onBack) {
   if (camp) {
     fTitre.querySelector("input").value = camp.titre;
     fTheme.querySelector("input").value = camp.theme || "";
+    fReference.querySelector("input").value = camp.reference || "";
     fDebut.querySelector("input").value = camp.date_debut;
     fFin.querySelector("input").value = camp.date_fin || "";
     fLieu.querySelector("input").value = camp.lieu || "";
     descTextarea.value = camp.description || "";
   }
-  card.appendChild(fTitre); card.appendChild(fTheme); card.appendChild(fDebut); card.appendChild(fFin); card.appendChild(fLieu);
+  card.appendChild(fTitre); card.appendChild(fTheme); card.appendChild(fReference); card.appendChild(fDebut); card.appendChild(fFin); card.appendChild(fLieu);
   card.appendChild(fDesc); card.appendChild(descToolbar);
   const saveBtn = el(`<button class="btn btn-gold">${isNew ? "Créer le camp" : "Enregistrer"}</button>`);
   card.appendChild(saveBtn);
@@ -1044,6 +1101,7 @@ async function renderCampEditor(camp, onBack) {
     const body = {
       titre: fTitre.querySelector("input").value.trim(),
       theme: fTheme.querySelector("input").value.trim(),
+      reference: fReference.querySelector("input").value.trim(),
       date_debut: fDebut.querySelector("input").value,
       date_fin: fFin.querySelector("input").value || null,
       lieu: fLieu.querySelector("input").value.trim(),
