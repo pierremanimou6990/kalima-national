@@ -20,6 +20,9 @@ function escapeHtml(str) {
   d.textContent = str || "";
   return d.innerHTML;
 }
+function escapeHtmlMultiline(str) {
+  return escapeHtml(str).replace(/\n/g, "<br>");
+}
 function initials(nom) {
   return (nom || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 }
@@ -111,7 +114,9 @@ async function renderHome() {
   wrap.appendChild(loginBtn);
 
   wrap.appendChild(el(`<div id="communiques-slot"></div>`));
+  wrap.appendChild(el(`<div id="progression-slot"></div>`));
   wrap.appendChild(el(`<div id="camps-slot"></div>`));
+  wrap.appendChild(el(`<div id="comite-slot"></div>`));
   app.appendChild(wrap);
 
   try {
@@ -132,12 +137,51 @@ async function renderHome() {
   } catch (e) { /* silencieux */ }
 
   try {
+    const { regions } = await api("/api/regions/progression-publique");
+    const slot = wrap.querySelector("#progression-slot");
+    if (regions.some((r) => r.montantCible > 0)) {
+      slot.appendChild(el(`<h2 class="section-h">🎯 Progression des cotisations</h2>`));
+      regions.forEach((r) => {
+        const pct = r.montantCible > 0 ? Math.min(100, Math.round((r.totalVerse / r.montantCible) * 100)) : 0;
+        slot.appendChild(el(`
+          <div class="region-card">
+            <div class="name">${escapeHtml(r.region)}</div>
+            <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+            <div class="progress-label"><span>${pct}%</span><span>${formatMontant(r.totalVerse)} sur ${formatMontant(r.montantCible)}</span></div>
+          </div>
+        `));
+      });
+    }
+  } catch (e) { /* silencieux */ }
+
+  try {
     const { camps } = await api("/api/camps");
     const upcoming = camps.filter((c) => joursRestants(c.date_debut) >= 0);
     const slot = wrap.querySelector("#camps-slot");
     if (upcoming.length) {
       slot.appendChild(el(`<h2 class="section-h">⛺ Prochains camps</h2>`));
       upcoming.forEach((c) => slot.appendChild(campCardPublic(c)));
+    }
+  } catch (e) { /* silencieux */ }
+
+  try {
+    const { membres } = await api("/api/comite");
+    const slot = wrap.querySelector("#comite-slot");
+    if (membres.length) {
+      slot.appendChild(el(`<h2 class="section-h">🤝 Comité national des jeunes</h2>`));
+      membres.forEach((m) => {
+        slot.appendChild(el(`
+          <div class="row-item">
+            <div class="info">
+              ${avatarHtml(m.photo_url, m.nom)}
+              <div>
+                <div class="nom">${escapeHtml(m.nom)}</div>
+                <div class="meta">${escapeHtml(m.fonction || "—")}${m.telephone ? " · " + escapeHtml(m.telephone) : ""}</div>
+              </div>
+            </div>
+          </div>
+        `));
+      });
     }
   } catch (e) { /* silencieux */ }
 }
@@ -149,6 +193,7 @@ function campCardPublic(camp) {
       <div class="body">
         <div class="countdown">${jours === 0 ? "🎉 C'est aujourd'hui" : `J-<span class="n">${jours}</span>`}</div>
         <div class="titre">${escapeHtml(camp.titre)}</div>
+        ${camp.theme ? `<div class="camp-theme">« ${escapeHtml(camp.theme)} »</div>` : ""}
         <div class="when">📅 ${formatDateFr(camp.date_debut)}${camp.date_fin ? " au " + formatDateFr(camp.date_fin) : ""}</div>
         ${camp.lieu ? `<div class="where">📍 ${escapeHtml(camp.lieu)}</div>` : ""}
         ${camp.orateurs && camp.orateurs.length ? `<div class="orateurs-row">${camp.orateurs.map((o) => `<div class="orateur-chip">${avatarHtml(o.photo_url, o.nom)}<span class="nom">${escapeHtml(o.nom)}</span></div>`).join("")}</div>` : ""}
@@ -167,8 +212,9 @@ async function renderCampDetail(camp) {
   const jours = joursRestants(camp.date_debut);
 
   wrap.appendChild(el(`<div class="countdown">${jours <= 0 ? "🎉 En cours ou passé" : `J-<span class="n">${jours}</span>`}</div>`));
+  if (camp.theme) wrap.appendChild(el(`<p class="camp-theme" style="font-size:16px; margin-bottom:8px;">« ${escapeHtml(camp.theme)} »</p>`));
   wrap.appendChild(el(`<p class="hint-text">📅 ${formatDateFr(camp.date_debut)}${camp.date_fin ? " au " + formatDateFr(camp.date_fin) : ""}${camp.lieu ? " · 📍 " + escapeHtml(camp.lieu) : ""}</p>`));
-  if (camp.description) wrap.appendChild(el(`<p class="lead">${escapeHtml(camp.description)}</p>`));
+  if (camp.description) wrap.appendChild(el(`<p class="lead">${escapeHtmlMultiline(camp.description)}</p>`));
 
   if (camp.orateurs && camp.orateurs.length) {
     wrap.appendChild(el(`<h2 class="section-h">Orateurs</h2>`));
@@ -573,7 +619,7 @@ async function renderRegionalDashboard() {
     api("/api/region/progression"),
   ]);
   const eglises = new Set(jeunes.map((j) => j.eglise));
-  const pct = progression.montantCible > 0 ? Math.min(100, Math.round((progression.totalPaye / progression.montantCible) * 100)) : 0;
+  const pct = progression.montantCible > 0 ? Math.min(100, Math.round((progression.totalVerse / progression.montantCible) * 100)) : 0;
 
   wrap.innerHTML = "";
   wrap.appendChild(el(`
@@ -586,7 +632,7 @@ async function renderRegionalDashboard() {
     <div class="region-card">
       <div class="name">Cotisation régionale</div>
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
-      <div class="progress-label"><span>${formatMontant(progression.totalPaye)} collectés</span><span>${pct}% de ${formatMontant(progression.montantCible)}</span></div>
+      <div class="progress-label"><span>${formatMontant(progression.totalVerse)} reçus par le national</span><span>${pct}% de ${formatMontant(progression.montantCible)}</span></div>
     </div>
   `));
 
@@ -666,89 +712,43 @@ async function renderRegionalComptes() {
 }
 
 async function renderRegionalCotisations() {
+  const session = getSession();
   app.innerHTML = "";
   app.appendChild(topBar("Cotisations", renderRegionalMenu));
   const wrap = el(`<div class="container"><p class="empty">Chargement…</p></div>`);
   app.appendChild(wrap);
 
-  const { jeunes } = await api("/api/jeunes/region");
-  let query = "";
+  const [progression, { versements }] = await Promise.all([
+    api("/api/region/progression"),
+    api(`/api/regions/${encodeURIComponent(session.user.region)}/versements`),
+  ]);
+  const pct = progression.montantCible > 0 ? Math.min(100, Math.round((progression.totalVerse / progression.montantCible) * 100)) : 0;
 
-  function draw() {
-    wrap.innerHTML = "";
-    const search = el(`<input class="search-field" placeholder="Rechercher un jeune ou une église..." />`);
-    search.value = query;
-    search.oninput = () => { query = search.value; draw(); };
-    wrap.appendChild(search);
+  wrap.innerHTML = "";
+  wrap.appendChild(el(`
+    <div class="region-card">
+      <div class="name">${escapeHtml(session.user.region)}</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+      <div class="progress-label"><span>${formatMontant(progression.totalVerse)} reçus par le national</span><span>${pct}% de ${formatMontant(progression.montantCible)}</span></div>
+    </div>
+  `));
+  wrap.appendChild(el(`<p class="hint-text">C'est le président national qui note ici les montants reçus physiquement de votre région. Vous suivez la progression, mais ne notez pas les versements vous-même.</p>`));
 
-    const filtered = query
-      ? jeunes.filter((j) => j.nom.toLowerCase().includes(query.toLowerCase()) || j.eglise.toLowerCase().includes(query.toLowerCase()))
-      : jeunes;
-
-    if (filtered.length === 0) {
-      wrap.appendChild(el(`<p class="empty">Aucun jeune trouvé.</p>`));
-    } else {
-      filtered.forEach((j) => {
-        const row = el(`
-          <div class="row-item">
-            <div class="info">
-              ${avatarHtml(j.photo_url, j.nom)}
-              <div>
-                <div class="nom">${escapeHtml(j.nom)}</div>
-                <div class="meta">${escapeHtml(j.eglise)} · <b style="color:var(--success);">${formatMontant(j.total_paye)}</b> payé</div>
-              </div>
-            </div>
-            <button class="btn btn-gold btn-sm">＋ Paiement</button>
-          </div>
-        `);
-        row.querySelector("button").onclick = () => renderNoterPaiement(j, draw);
-        wrap.appendChild(row);
-      });
-    }
-  }
-  draw();
-}
-
-function renderNoterPaiement(jeune, onDone) {
-  app.innerHTML = "";
-  app.appendChild(topBar(`Paiement — ${jeune.nom}`, () => renderRegionalCotisations()));
-  const wrap = el(`<div class="container"></div>`);
-  wrap.appendChild(el(`<p class="hint-text">Total déjà payé : <b>${formatMontant(jeune.total_paye)}</b></p>`));
-
-  const fMontant = el(`<label class="field"><span class="label-text">Montant reçu (GNF)</span><input type="number" placeholder="ex. 50000" /></label>`);
-  const fDate = el(`<label class="field"><span class="label-text">Date du paiement</span><input type="date" value="${new Date().toISOString().slice(0, 10)}" /></label>`);
-  wrap.appendChild(fMontant); wrap.appendChild(fDate);
-
-  const btn = el(`<button class="btn btn-gold btn-block">Enregistrer le paiement</button>`);
-  btn.onclick = async () => {
-    const montant = fMontant.querySelector("input").value;
-    const date_paiement = fDate.querySelector("input").value;
-    if (!montant || Number(montant) <= 0) return;
-    btn.disabled = true;
-    try {
-      await api("/api/paiements", { method: "POST", body: JSON.stringify({ jeune_id: jeune.id, montant, date_paiement }) });
-      jeune.total_paye = Number(jeune.total_paye) + Number(montant);
-      renderRegionalCotisations();
-    } catch (e) {
-      btn.disabled = false;
-      alert(e.message);
-    }
-  };
-  wrap.appendChild(btn);
-
-  wrap.appendChild(el(`<h2 class="section-h">Historique</h2>`));
-  const histWrap = el(`<div></div>`);
-  wrap.appendChild(histWrap);
-  api(`/api/jeunes/${jeune.id}/paiements`).then(({ paiements }) => {
-    if (paiements.length === 0) { histWrap.appendChild(el(`<p class="empty">Aucun paiement noté encore.</p>`)); return; }
-    paiements.forEach((p) => {
-      histWrap.appendChild(el(`
-        <div class="row-item"><div class="info"><div><div class="nom">${formatMontant(p.montant)}</div><div class="meta">${formatDateFr(p.date_paiement)}</div></div></div></div>
+  wrap.appendChild(el(`<div class="list-head"><span class="label">Historique des versements reçus</span></div>`));
+  if (versements.length === 0) {
+    wrap.appendChild(el(`<p class="empty">Aucun versement noté par le national pour l'instant.</p>`));
+  } else {
+    versements.forEach((v) => {
+      wrap.appendChild(el(`
+        <div class="row-item">
+          <div class="info"><div>
+            <div class="nom">${formatMontant(v.montant)}</div>
+            <div class="meta">${formatDateFr(v.date_versement)}${v.note ? " · " + escapeHtml(v.note) : ""}</div>
+          </div></div>
+        </div>
       `));
     });
-  });
-
-  app.appendChild(wrap);
+  }
 }
 
 async function renderRegionalImprimer() {
@@ -811,6 +811,7 @@ function renderNationalMenu() {
     { icon: "⛺", label: "Camps", fn: renderNationalCamps },
     { icon: "📢", label: "Communiqués", fn: renderNationalCommuniques },
     { icon: "📇", label: "Annuaire national", fn: renderNationalAnnuaire },
+    { icon: "🤝", label: "Comité national", fn: renderNationalComite },
   ];
   items.forEach((it) => {
     const tile = el(`<button class="menu-tile"><div class="icon">${it.icon}</div><span class="label">${it.label}</span></button>`);
@@ -841,7 +842,7 @@ async function renderNationalDashboard() {
 
   wrap.appendChild(el(`<h2 class="section-h">Détail par région</h2>`));
   regions.forEach((r) => {
-    const pct = r.montantCible > 0 ? Math.min(100, Math.round((r.totalPaye / r.montantCible) * 100)) : 0;
+    const pct = r.montantCible > 0 ? Math.min(100, Math.round((r.totalVerse / r.montantCible) * 100)) : 0;
     const card = el(`
       <div class="region-card">
         <div class="name">${escapeHtml(r.region)}</div>
@@ -850,11 +851,15 @@ async function renderNationalDashboard() {
           <div class="stat"><b>${r.nbJeunes}</b>jeune${r.nbJeunes > 1 ? "s" : ""}</div>
         </div>
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
-        <div class="progress-label"><span>${formatMontant(r.totalPaye)} collectés</span><span>${pct}% de <span class="objectif-txt">${formatMontant(r.montantCible)}</span></span></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:12px;">Modifier l'objectif</button>
+        <div class="progress-label"><span>${formatMontant(r.totalVerse)} reçus</span><span>${pct}% de <span class="objectif-txt">${formatMontant(r.montantCible)}</span></span></div>
+        <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm objectif-btn">Modifier l'objectif</button>
+          <button class="btn btn-gold btn-sm versement-btn">＋ Noter un versement</button>
+          <button class="btn btn-ghost btn-sm historique-btn">Historique</button>
+        </div>
       </div>
     `);
-    card.querySelector("button").onclick = async () => {
+    card.querySelector(".objectif-btn").onclick = async () => {
       const nouveau = prompt(`Nouvel objectif pour ${r.region} (en GNF) :`, r.montantCible);
       if (nouveau === null) return;
       try {
@@ -862,8 +867,63 @@ async function renderNationalDashboard() {
         renderNationalDashboard();
       } catch (e) { alert(e.message); }
     };
+    card.querySelector(".versement-btn").onclick = () => renderNoterVersement(r.region, () => renderNationalDashboard());
+    card.querySelector(".historique-btn").onclick = () => renderHistoriqueVersements(r.region);
     wrap.appendChild(card);
   });
+}
+
+function renderNoterVersement(region, onDone) {
+  app.innerHTML = "";
+  app.appendChild(topBar(`Versement — ${region}`, renderNationalDashboard));
+  const wrap = el(`<div class="container"></div>`);
+  wrap.appendChild(el(`<p class="hint-text">Notez ici le montant que vous avez reçu physiquement de cette région.</p>`));
+
+  const fMontant = el(`<label class="field"><span class="label-text">Montant reçu (GNF)</span><input type="number" placeholder="ex. 500000" /></label>`);
+  const fDate = el(`<label class="field"><span class="label-text">Date du versement</span><input type="date" value="${new Date().toISOString().slice(0, 10)}" /></label>`);
+  const fNote = el(`<label class="field"><span class="label-text">Note (facultatif)</span><input placeholder="ex. Remis en main propre par le président régional" /></label>`);
+  wrap.appendChild(fMontant); wrap.appendChild(fDate); wrap.appendChild(fNote);
+
+  const btn = el(`<button class="btn btn-gold btn-block">Enregistrer le versement</button>`);
+  btn.onclick = async () => {
+    const montant = fMontant.querySelector("input").value;
+    const date_versement = fDate.querySelector("input").value;
+    const note = fNote.querySelector("input").value.trim();
+    if (!montant || Number(montant) <= 0) return;
+    btn.disabled = true;
+    try {
+      await api(`/api/regions/${encodeURIComponent(region)}/versements`, { method: "POST", body: JSON.stringify({ montant, date_versement, note }) });
+      onDone();
+    } catch (e) {
+      btn.disabled = false;
+      alert(e.message);
+    }
+  };
+  wrap.appendChild(btn);
+  app.appendChild(wrap);
+}
+
+async function renderHistoriqueVersements(region) {
+  app.innerHTML = "";
+  app.appendChild(topBar(`Historique — ${region}`, renderNationalDashboard));
+  const wrap = el(`<div class="container"><p class="empty">Chargement…</p></div>`);
+  app.appendChild(wrap);
+  const { versements } = await api(`/api/regions/${encodeURIComponent(region)}/versements`);
+  wrap.innerHTML = "";
+  if (versements.length === 0) {
+    wrap.appendChild(el(`<p class="empty">Aucun versement noté pour cette région.</p>`));
+  } else {
+    versements.forEach((v) => {
+      wrap.appendChild(el(`
+        <div class="row-item">
+          <div class="info"><div>
+            <div class="nom">${formatMontant(v.montant)}</div>
+            <div class="meta">${formatDateFr(v.date_versement)}${v.note ? " · " + escapeHtml(v.note) : ""}</div>
+          </div></div>
+        </div>
+      `));
+    });
+  }
 }
 
 async function renderNationalComptesRegionaux() {
@@ -948,18 +1008,34 @@ async function renderCampEditor(camp, onBack) {
 
   const card = el(`<div class="card"><div class="card-head"><span class="label">Informations générales</span></div></div>`);
   const fTitre = el(`<label class="field"><span class="label-text">Titre du camp</span><input placeholder="ex. Camp Biblique National 2026" /></label>`);
+  const fTheme = el(`<label class="field"><span class="label-text">Thème (facultatif)</span><input placeholder="ex. Debout pour la mission" /></label>`);
   const fDebut = el(`<label class="field"><span class="label-text">Date de début</span><input type="date" /></label>`);
   const fFin = el(`<label class="field"><span class="label-text">Date de fin (facultatif)</span><input type="date" /></label>`);
   const fLieu = el(`<label class="field"><span class="label-text">Lieu</span><input placeholder="ex. Kalima Pounthioun" /></label>`);
-  const fDesc = el(`<label class="field"><span class="label-text">Description (facultatif)</span><textarea rows="3"></textarea></label>`);
+  const fDesc = el(`<label class="field"><span class="label-text">Description (facultatif)</span><textarea rows="5"></textarea></label>`);
+  const descTextarea = fDesc.querySelector("textarea");
+  const descToolbar = el(`<div style="display:flex; gap:8px; margin:-10px 0 14px;"></div>`);
+  const bulletBtn = el(`<button type="button" class="btn btn-ghost btn-sm">• Ajouter une puce</button>`);
+  bulletBtn.onclick = () => {
+    const pos = descTextarea.selectionStart || descTextarea.value.length;
+    const before = descTextarea.value.slice(0, pos);
+    const after = descTextarea.value.slice(pos);
+    const prefix = before.length && !before.endsWith("\n") ? "\n• " : "• ";
+    descTextarea.value = before + prefix + after;
+    descTextarea.focus();
+  };
+  descToolbar.appendChild(bulletBtn);
+  descToolbar.appendChild(el(`<span class="field-hint" style="align-self:center;">Les emojis 🙂 du clavier du téléphone fonctionnent aussi directement.</span>`));
   if (camp) {
     fTitre.querySelector("input").value = camp.titre;
+    fTheme.querySelector("input").value = camp.theme || "";
     fDebut.querySelector("input").value = camp.date_debut;
     fFin.querySelector("input").value = camp.date_fin || "";
     fLieu.querySelector("input").value = camp.lieu || "";
-    fDesc.querySelector("textarea").value = camp.description || "";
+    descTextarea.value = camp.description || "";
   }
-  card.appendChild(fTitre); card.appendChild(fDebut); card.appendChild(fFin); card.appendChild(fLieu); card.appendChild(fDesc);
+  card.appendChild(fTitre); card.appendChild(fTheme); card.appendChild(fDebut); card.appendChild(fFin); card.appendChild(fLieu);
+  card.appendChild(fDesc); card.appendChild(descToolbar);
   const saveBtn = el(`<button class="btn btn-gold">${isNew ? "Créer le camp" : "Enregistrer"}</button>`);
   card.appendChild(saveBtn);
   wrap.appendChild(card);
@@ -967,10 +1043,11 @@ async function renderCampEditor(camp, onBack) {
   saveBtn.onclick = async () => {
     const body = {
       titre: fTitre.querySelector("input").value.trim(),
+      theme: fTheme.querySelector("input").value.trim(),
       date_debut: fDebut.querySelector("input").value,
       date_fin: fFin.querySelector("input").value || null,
       lieu: fLieu.querySelector("input").value.trim(),
-      description: fDesc.querySelector("textarea").value.trim(),
+      description: descTextarea.value.trim(),
     };
     if (!body.titre || !body.date_debut) return alert("Titre et date de début requis");
     saveBtn.disabled = true;
@@ -1260,6 +1337,79 @@ async function renderNationalAnnuaire() {
         `));
       });
     });
+  }
+  draw();
+}
+
+async function renderNationalComite() {
+  app.innerHTML = "";
+  app.appendChild(topBar("Comité national", renderNationalMenu));
+  const wrap = el(`<div class="container"><p class="empty">Chargement…</p></div>`);
+  app.appendChild(wrap);
+  const { membres } = await api("/api/comite");
+
+  function draw() {
+    wrap.innerHTML = "";
+    wrap.appendChild(el(`<p class="hint-text">Ces membres et leurs coordonnées apparaissent sur la page d'accueil publique du site.</p>`));
+
+    const card = el(`<div class="card"><div class="card-head"><span class="label">Ajouter un membre</span></div></div>`);
+    const fNom = el(`<label class="field"><span class="label-text">Nom complet</span><input placeholder="Nom et prénom" /></label>`);
+    const fFonction = el(`<label class="field"><span class="label-text">Fonction dans le ministère des jeunes</span><input placeholder="ex. Président national, Trésorier..." /></label>`);
+    const fTel = el(`<label class="field"><span class="label-text">Téléphone (facultatif)</span><input placeholder="ex. 622 00 00 00" /></label>`);
+    card.appendChild(fNom); card.appendChild(fFonction); card.appendChild(fTel);
+    const addBtn = el(`<button class="btn btn-gold">＋ Ajouter</button>`);
+    card.appendChild(addBtn);
+    addBtn.onclick = async () => {
+      const nom = fNom.querySelector("input").value.trim();
+      const fonction = fFonction.querySelector("input").value.trim();
+      const telephone = fTel.querySelector("input").value.trim();
+      if (!nom) return;
+      addBtn.disabled = true;
+      try {
+        const m = await api("/api/comite", { method: "POST", body: JSON.stringify({ nom, fonction, telephone }) });
+        membres.push(m);
+        draw();
+      } catch (e) { addBtn.disabled = false; alert(e.message); }
+    };
+    wrap.appendChild(card);
+
+    wrap.appendChild(el(`<div class="list-head"><span class="label">Membres</span><span class="count">${membres.length}</span></div>`));
+    if (membres.length === 0) {
+      wrap.appendChild(el(`<p class="empty">Aucun membre ajouté pour le moment.</p>`));
+    } else {
+      membres.forEach((m) => {
+        const row = el(`
+          <div class="row-item">
+            <div class="info">
+              ${avatarHtml(m.photo_url, m.nom)}
+              <div><div class="nom">${escapeHtml(m.nom)}</div><div class="meta">${escapeHtml(m.fonction || "—")}${m.telephone ? " · " + escapeHtml(m.telephone) : ""}</div></div>
+            </div>
+            <div class="actions">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">📷<input type="file" accept="image/*" style="display:none;" /></label>
+              <button aria-label="Supprimer">🗑</button>
+            </div>
+          </div>
+        `);
+        const fileInput = row.querySelector("input[type=file]");
+        fileInput.onchange = async () => {
+          const file = fileInput.files[0];
+          if (!file) return;
+          const fd = new FormData();
+          fd.append("photo", file);
+          const updated = await apiUpload(`/api/comite/${m.id}/photo`, fd);
+          Object.assign(m, updated);
+          draw();
+        };
+        row.querySelector("button[aria-label=Supprimer]").onclick = async () => {
+          if (!confirm(`Retirer ${m.nom} du comité ?`)) return;
+          await api(`/api/comite/${m.id}`, { method: "DELETE" });
+          const idx = membres.findIndex((x) => x.id === m.id);
+          membres.splice(idx, 1);
+          draw();
+        };
+        wrap.appendChild(row);
+      });
+    }
   }
   draw();
 }

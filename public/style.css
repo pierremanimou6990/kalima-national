@@ -102,6 +102,7 @@ label.field input:focus, label.field select:focus, label.field textarea:focus { 
 .camp-card { border:1px solid var(--line); background:var(--white); border-radius:12px; padding:0; margin-bottom:16px; overflow:hidden; }
 .camp-card .body { padding:16px; }
 .camp-card .titre { font-size:17px; font-weight:700; color:var(--ink); margin-bottom:4px; font-family: Georgia, serif; }
+.camp-theme { font-size:14px; color:var(--gold); font-style:italic; margin-bottom:8px; font-family: Georgia, serif; }
 .camp-card .when { font-size:14px; color:var(--text); margin-bottom:2px; }
 .camp-card .where { font-size:14px; color:var(--muted); margin-bottom:10px; }
 .countdown { display:inline-flex; align-items:center; gap:6px; background:var(--ink); color:#fff; border-radius:20px; padding:5px 14px; font-size:13px; font-weight:700; margin-bottom:10px; }

@@ -266,21 +266,16 @@ app.post("/api/jeunes/:id/photo", auth("eglise", "regional", "national"), upload
   res.json(data);
 });
 
-// Régional : jeunes de sa région (dashboard, cotisations, impression)
+// Régional : jeunes de sa région (dashboard, impression)
 app.get("/api/jeunes/region", auth("regional"), async (req, res) => {
   const { data, error } = await supabase
     .from("jeunes")
-    .select("*, paiements(montant)")
+    .select("*")
     .eq("region", req.user.region)
     .order("eglise", { ascending: true })
     .order("nom", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
-  const jeunes = data.map((j) => ({
-    ...j,
-    total_paye: (j.paiements || []).reduce((s, p) => s + Number(p.montant), 0),
-    paiements: undefined,
-  }));
-  res.json({ jeunes });
+  res.json({ jeunes: data });
 });
 
 // National : tous les jeunes (annuaire national, impression)
@@ -295,28 +290,42 @@ app.get("/api/jeunes/tous", auth("national"), async (req, res) => {
   res.json({ jeunes: data });
 });
 
-// ================= COTISATIONS =================
-app.get("/api/regions/resume", auth("national"), async (req, res) => {
-  const [{ data: jeunes }, { data: objectifs }, { data: paiements }, { data: eglises }] = await Promise.all([
+// ================= COTISATIONS (versements région → national) =================
+// Le national note lui-même ce qu'il reçoit physiquement de chaque région.
+// La somme des jeunes ne détermine plus rien : l'argent peut venir de plusieurs
+// sources (jeunes, églises...), donc on ne l'attribue pas à une personne précise.
+
+async function calculerResumeRegions() {
+  const [{ data: jeunes }, { data: objectifs }, { data: versements }, { data: eglises }] = await Promise.all([
     supabase.from("jeunes").select("region"),
     supabase.from("objectifs_region").select("*"),
-    supabase.from("paiements").select("region, montant"),
-    supabase.from("users").select("region").eq("role", "eglise").not("eglise", "is", null),
+    supabase.from("versements_region").select("region, montant"),
+    supabase.from("users").select("region, eglise").eq("role", "eglise").not("eglise", "is", null),
   ]);
-  const resume = REGIONS.map((region) => {
+  return REGIONS.map((region) => {
     const nbJeunes = (jeunes || []).filter((j) => j.region === region).length;
-    const nbEglises = new Set((eglises || []).filter((e) => e.region === region).map((e) => e.region + e.eglise)).size;
+    const nbEglises = new Set((eglises || []).filter((e) => e.region === region).map((e) => e.eglise)).size;
     const objectif = (objectifs || []).find((o) => o.region === region);
-    const totalPaye = (paiements || []).filter((p) => p.region === region).reduce((s, p) => s + Number(p.montant), 0);
+    const totalVerse = (versements || []).filter((v) => v.region === region).reduce((s, v) => s + Number(v.montant), 0);
     return {
       region,
       nbEglises,
       nbJeunes,
       montantCible: objectif ? Number(objectif.montant_cible) : 0,
-      totalPaye,
+      totalVerse,
     };
   });
+}
+
+app.get("/api/regions/resume", auth("national"), async (req, res) => {
+  const resume = await calculerResumeRegions();
   res.json({ regions: resume });
+});
+
+// Progression publique, visible sur l'écran d'accueil sans connexion
+app.get("/api/regions/progression-publique", async (req, res) => {
+  const resume = await calculerResumeRegions();
+  res.json({ regions: resume.map(({ region, montantCible, totalVerse }) => ({ region, montantCible, totalVerse })) });
 });
 
 app.put("/api/regions/:region/objectif", auth("national"), async (req, res) => {
@@ -333,28 +342,19 @@ app.put("/api/regions/:region/objectif", auth("national"), async (req, res) => {
   res.json(data);
 });
 
-// Régional : voir sa progression + noter des paiements
-app.get("/api/region/progression", auth("regional"), async (req, res) => {
-  const [{ data: objectif }, { data: paiements }] = await Promise.all([
-    supabase.from("objectifs_region").select("*").eq("region", req.user.region).single(),
-    supabase.from("paiements").select("montant").eq("region", req.user.region),
-  ]);
-  const totalPaye = (paiements || []).reduce((s, p) => s + Number(p.montant), 0);
-  res.json({ montantCible: objectif ? Number(objectif.montant_cible) : 0, totalPaye });
-});
-
-app.post("/api/paiements", auth("regional"), async (req, res) => {
-  const { jeune_id, montant, date_paiement } = req.body || {};
-  if (!jeune_id || !montant || Number(montant) <= 0) return res.status(400).json({ error: "Jeune et montant requis" });
-  const { data: jeune } = await supabase.from("jeunes").select("region").eq("id", jeune_id).single();
-  if (!jeune || jeune.region !== req.user.region) return res.status(403).json({ error: "Ce jeune n'appartient pas à votre région" });
+// Le national note un versement reçu d'une région
+app.post("/api/regions/:region/versements", auth("national"), async (req, res) => {
+  const { region } = req.params;
+  const { montant, date_versement, note } = req.body || {};
+  if (!REGIONS.includes(region)) return res.status(400).json({ error: "Région invalide" });
+  if (!montant || Number(montant) <= 0) return res.status(400).json({ error: "Montant requis" });
   const { data, error } = await supabase
-    .from("paiements")
+    .from("versements_region")
     .insert({
-      jeune_id,
-      region: req.user.region,
+      region,
       montant: Number(montant),
-      date_paiement: date_paiement || new Date().toISOString().slice(0, 10),
+      date_versement: date_versement || new Date().toISOString().slice(0, 10),
+      note: note || null,
       note_par: req.user.id,
     })
     .select()
@@ -363,14 +363,28 @@ app.post("/api/paiements", auth("regional"), async (req, res) => {
   res.json(data);
 });
 
-app.get("/api/jeunes/:id/paiements", auth("regional"), async (req, res) => {
+app.get("/api/regions/:region/versements", auth("national", "regional"), async (req, res) => {
+  const { region } = req.params;
+  if (req.user.role === "regional" && req.user.region !== region) {
+    return res.status(403).json({ error: "Accès non autorisé" });
+  }
   const { data, error } = await supabase
-    .from("paiements")
+    .from("versements_region")
     .select("*")
-    .eq("jeune_id", req.params.id)
-    .order("date_paiement", { ascending: false });
+    .eq("region", region)
+    .order("date_versement", { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ paiements: data });
+  res.json({ versements: data });
+});
+
+// Régional : voir la progression de sa propre région (lecture seule)
+app.get("/api/region/progression", auth("regional"), async (req, res) => {
+  const [{ data: objectif }, { data: versements }] = await Promise.all([
+    supabase.from("objectifs_region").select("*").eq("region", req.user.region).single(),
+    supabase.from("versements_region").select("montant").eq("region", req.user.region),
+  ]);
+  const totalVerse = (versements || []).reduce((s, v) => s + Number(v.montant), 0);
+  res.json({ montantCible: objectif ? Number(objectif.montant_cible) : 0, totalVerse });
 });
 
 // ================= CAMPS =================
@@ -383,11 +397,11 @@ app.get("/api/camps", async (req, res) => {
 });
 
 app.post("/api/camps", auth("national"), async (req, res) => {
-  const { titre, date_debut, date_fin, lieu, description } = req.body || {};
+  const { titre, theme, date_debut, date_fin, lieu, description } = req.body || {};
   if (!titre || !date_debut) return res.status(400).json({ error: "Titre et date de début requis" });
   const { data, error } = await supabase
     .from("camps")
-    .insert({ titre: titre.trim(), date_debut, date_fin: date_fin || null, lieu, description })
+    .insert({ titre: titre.trim(), theme: theme || null, date_debut, date_fin: date_fin || null, lieu, description })
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
@@ -395,10 +409,10 @@ app.post("/api/camps", auth("national"), async (req, res) => {
 });
 
 app.put("/api/camps/:id", auth("national"), async (req, res) => {
-  const { titre, date_debut, date_fin, lieu, description } = req.body || {};
+  const { titre, theme, date_debut, date_fin, lieu, description } = req.body || {};
   const { data, error } = await supabase
     .from("camps")
-    .update({ titre, date_debut, date_fin: date_fin || null, lieu, description })
+    .update({ titre, theme: theme || null, date_debut, date_fin: date_fin || null, lieu, description })
     .eq("id", req.params.id)
     .select()
     .single();
@@ -537,6 +551,60 @@ app.get("/api/camps/:id/inscriptions/pdf", auth("national"), async (req, res) =>
   }
 
   doc.end();
+});
+
+// ================= COMITÉ NATIONAL =================
+app.get("/api/comite", async (req, res) => {
+  const { data, error } = await supabase.from("comite_national").select("*").order("ordre", { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ membres: data });
+});
+
+app.post("/api/comite", auth("national"), async (req, res) => {
+  const { nom, fonction, telephone } = req.body || {};
+  if (!nom || !nom.trim()) return res.status(400).json({ error: "Le nom est requis" });
+  const { data: existants } = await supabase.from("comite_national").select("ordre").order("ordre", { ascending: false }).limit(1);
+  const ordre = existants && existants.length ? existants[0].ordre + 1 : 0;
+  const { data, error } = await supabase
+    .from("comite_national")
+    .insert({ nom: nom.trim(), fonction: fonction || "", telephone: telephone || "", ordre })
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.put("/api/comite/:id", auth("national"), async (req, res) => {
+  const { nom, fonction, telephone } = req.body || {};
+  const { data, error } = await supabase
+    .from("comite_national")
+    .update({ nom, fonction, telephone })
+    .eq("id", req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.post("/api/comite/:id/photo", auth("national"), upload.single("photo"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Aucune photo reçue" });
+  const ext = (req.file.mimetype.split("/")[1] || "jpg").replace("jpeg", "jpg");
+  const filePath = `comite-${req.params.id}.${ext}`;
+  const { error: uploadError } = await supabase.storage
+    .from(PHOTOS_BUCKET)
+    .upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+  if (uploadError) return res.status(500).json({ error: uploadError.message });
+  const { data: pub } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filePath);
+  const photo_url = `${pub.publicUrl}?t=${Date.now()}`;
+  const { data, error } = await supabase.from("comite_national").update({ photo_url }).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+app.delete("/api/comite/:id", auth("national"), async (req, res) => {
+  const { error } = await supabase.from("comite_national").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // ================= COMMUNIQUÉS =================

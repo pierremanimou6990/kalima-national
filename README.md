@@ -5,6 +5,52 @@ d'église → président régional → président national. Comptes individuels
 pour chaque personne (traçabilité complète), cotisations par région,
 camps bibliques avec orateurs et planning libre, communiqués nationaux.
 
+## ⚠️ Mise à jour d'un site déjà en ligne
+
+Si tu as déjà déployé une version précédente de ce site, **avant** de
+remplacer les fichiers sur GitHub, va d'abord dans Supabase → **SQL
+Editor** → **New query**, colle ceci, puis **Run** — ça ajoute les
+nouvelles tables sans toucher à tes données existantes :
+
+```sql
+alter table camps add column if not exists theme text;
+
+create table if not exists versements_region (
+  id uuid primary key default gen_random_uuid(),
+  region text not null,
+  montant numeric not null,
+  date_versement date not null default current_date,
+  note text,
+  note_par uuid references users(id),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists comite_national (
+  id uuid primary key default gen_random_uuid(),
+  nom text not null,
+  fonction text,
+  telephone text,
+  photo_url text,
+  ordre integer not null default 0,
+  created_at timestamptz not null default now()
+);
+```
+
+L'ancienne table `paiements` (paiement noté par jeune) n'est plus utilisée
+par l'application — le suivi des cotisations passe désormais par les
+versements que le national note région par région (voir plus bas
+pourquoi). Tu peux laisser cette table telle quelle sans risque, ou la
+supprimer si tu veux faire le ménage :
+
+```sql
+drop table if exists paiements;
+```
+
+Une fois cette migration faite, remplace sur GitHub les fichiers
+`server.js`, `package.json`, `package-lock.json`, `public/app.js` et
+`public/style.css` par les nouvelles versions de ce dossier. Render
+redéploiera automatiquement.
+
 ## Étape 1 — Créer la base Supabase
 
 1. https://supabase.com → **Start your project** → connecte-toi avec GitHub
@@ -39,12 +85,12 @@ camps bibliques avec orateurs et planning libre, communiqués nationaux.
      created_at timestamptz not null default now()
    );
 
-   create table paiements (
+   create table versements_region (
      id uuid primary key default gen_random_uuid(),
-     jeune_id uuid references jeunes(id) on delete cascade,
      region text not null,
      montant numeric not null,
-     date_paiement date not null default current_date,
+     date_versement date not null default current_date,
+     note text,
      note_par uuid references users(id),
      created_at timestamptz not null default now()
    );
@@ -57,6 +103,7 @@ camps bibliques avec orateurs et planning libre, communiqués nationaux.
    create table camps (
      id uuid primary key default gen_random_uuid(),
      titre text not null,
+     theme text,
      date_debut date not null,
      date_fin date,
      lieu text,
@@ -87,6 +134,16 @@ camps bibliques avec orateurs et planning libre, communiqués nationaux.
      id uuid primary key default gen_random_uuid(),
      titre text not null,
      contenu text not null,
+     created_at timestamptz not null default now()
+   );
+
+   create table comite_national (
+     id uuid primary key default gen_random_uuid(),
+     nom text not null,
+     fonction text,
+     telephone text,
+     photo_url text,
+     ordre integer not null default 0,
      created_at timestamptz not null default now()
    );
    ```
@@ -134,25 +191,35 @@ espace :
   possibilité de réinitialiser le mot de passe à tout moment)
 - Fixe le montant à collecter par région (ex. 5 000 000 GNF pour la Moyenne
   Guinée)
+- **Note lui-même les versements reçus physiquement de chaque région**
+  (montant, date, note facultative), avec un historique consultable — la
+  progression affichée partout (accueil public inclus) repose sur ces
+  versements, jamais sur un paiement individuel de jeune. L'argent d'une
+  région peut venir de plusieurs sources (jeunes, dons d'église...), donc
+  rien n'est attribué à une personne en particulier.
 - Voit pour chaque région : nombre d'églises, nombre de jeunes, montant
-  collecté sur l'objectif
-- Programme les camps : titre, dates, lieu, description, plusieurs
-  orateurs avec photo, et un planning en tableau entièrement libre
-  (colonnes et lignes ajoutables à volonté)
+  reçu sur l'objectif
+- Programme les camps : titre, **thème**, dates, lieu, description (avec
+  aide pour ajouter des puces ; les emojis du clavier fonctionnent
+  directement), plusieurs orateurs avec photo, et un planning en tableau
+  entièrement libre (colonnes et lignes ajoutables à volonté)
 - Publie des communiqués, visibles par tous dès l'écran d'accueil
+- Gère le **comité national** (jusqu'à 4 personnes) : nom, fonction dans
+  le ministère des jeunes, téléphone, photo — affiché sur l'écran
+  d'accueil public
 - Consulte l'annuaire national complet (tous les jeunes, toutes régions),
   imprimable
-- Télécharge la liste des inscrits à un camp (fichier CSV, ouvrable dans
-  Excel)
+- Télécharge la liste des inscrits à un camp, en PDF prêt à imprimer ou
+  en CSV pour Excel
 
 **Chaque président régional** se connecte avec le compte que le national
 lui a créé, et depuis son espace :
 - Crée un compte pour chaque responsable d'église de sa région (email +
   mot de passe qu'il communique lui-même à la personne)
 - Voit le nombre d'églises et de jeunes de sa région, église par église
-- Note les paiements de cotisation de chaque jeune (possibilité de payer
-  en plusieurs fois, historique conservé) et suit la progression de sa
-  région vers l'objectif national
+- Suit la progression de sa région vers l'objectif national et
+  l'historique des versements que le national a notés pour elle
+  (lecture seule — c'est le national qui note, pas le régional)
 - Imprime la liste des jeunes de sa région
 - Consulte les camps programmés (lecture seule)
 
@@ -162,9 +229,10 @@ son église, puis saisit ses jeunes (nom, téléphone, email, fonction,
 photo).
 
 **Tout le monde**, même sans se connecter, peut voir sur l'écran
-d'accueil : les communiqués nationaux, les prochains camps avec un compte
-à rebours (J-N), le détail d'un camp (orateurs, planning), et s'inscrire
-pour y participer.
+d'accueil : les communiqués nationaux, la progression des cotisations de
+chaque région (pour motiver les régions en retard), les prochains camps
+avec un compte à rebours (J-N), le détail d'un camp (thème, orateurs,
+planning), le comité national, et s'inscrire pour participer à un camp.
 
 ## Sécurité — bon à savoir
 
