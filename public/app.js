@@ -223,6 +223,7 @@ function comiteBar(membres) {
         <div>
           <div class="nom">${escapeHtml(president.nom)}</div>
           <div class="fonction">${escapeHtml(president.fonction || "Président")}</div>
+          ${president.telephone ? `<div class="tel">${escapeHtml(president.telephone)}</div>` : ""}
         </div>
       </div>
       <div class="others-row"></div>
@@ -233,7 +234,11 @@ function comiteBar(membres) {
     row.appendChild(el(`
       <div class="other-item">
         ${avatarHtml(m.photo_url, m.nom)}
-        <span class="nom">${escapeHtml(m.nom)}</span>
+        <div>
+          <div class="nom">${escapeHtml(m.nom)}</div>
+          ${m.fonction ? `<div class="fonction">${escapeHtml(m.fonction)}</div>` : ""}
+          ${m.telephone ? `<div class="tel">${escapeHtml(m.telephone)}</div>` : ""}
+        </div>
       </div>
     `));
   });
@@ -917,6 +922,10 @@ async function renderNationalDashboard() {
     card.querySelector(".objectif-btn").onclick = async () => {
       const nouveau = prompt(`Nouvel objectif pour ${r.region} (en GNF) :`, r.montantCible);
       if (nouveau === null) return;
+      const confirmation = confirm(
+        `Attention : changer l'objectif de ${r.region} remet le montant reçu à zéro et efface tout l'historique des versements de cette région. Continuer ?`
+      );
+      if (!confirmation) return;
       try {
         await api(`/api/regions/${encodeURIComponent(r.region)}/objectif`, { method: "PUT", body: JSON.stringify({ montant_cible: nouveau }) });
         renderNationalDashboard();
@@ -964,21 +973,43 @@ async function renderHistoriqueVersements(region) {
   const wrap = el(`<div class="container"><p class="empty">Chargement…</p></div>`);
   app.appendChild(wrap);
   const { versements } = await api(`/api/regions/${encodeURIComponent(region)}/versements`);
-  wrap.innerHTML = "";
-  if (versements.length === 0) {
-    wrap.appendChild(el(`<p class="empty">Aucun versement noté pour cette région.</p>`));
-  } else {
+
+  function draw() {
+    wrap.innerHTML = "";
+    if (versements.length === 0) {
+      wrap.appendChild(el(`<p class="empty">Aucun versement noté pour cette région.</p>`));
+      return;
+    }
+    const clearBtn = el(`<button class="btn btn-danger-outline btn-sm" style="margin-bottom:14px;">🗑 Vider tout l'historique</button>`);
+    clearBtn.onclick = async () => {
+      if (!confirm(`Effacer tout l'historique des versements de ${region} ? Le montant reçu reviendra à zéro.`)) return;
+      await api(`/api/regions/${encodeURIComponent(region)}/versements`, { method: "DELETE" });
+      versements.length = 0;
+      draw();
+    };
+    wrap.appendChild(clearBtn);
+
     versements.forEach((v) => {
-      wrap.appendChild(el(`
+      const row = el(`
         <div class="row-item">
           <div class="info"><div>
             <div class="nom">${formatMontant(v.montant)}</div>
             <div class="meta">${formatDateFr(v.date_versement)}${v.note ? " · " + escapeHtml(v.note) : ""}</div>
           </div></div>
+          <button aria-label="Supprimer">🗑</button>
         </div>
-      `));
+      `);
+      row.querySelector("button").onclick = async () => {
+        if (!confirm(`Supprimer ce versement de ${formatMontant(v.montant)} ?`)) return;
+        await api(`/api/regions/${encodeURIComponent(region)}/versements/${v.id}`, { method: "DELETE" });
+        const idx = versements.findIndex((x) => x.id === v.id);
+        versements.splice(idx, 1);
+        draw();
+      };
+      wrap.appendChild(row);
     });
   }
+  draw();
 }
 
 async function renderNationalComptesRegionaux() {

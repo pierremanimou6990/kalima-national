@@ -194,10 +194,13 @@ table.planning td input:focus { outline:1px solid var(--gold); border-radius:3px
 .comite-bar .president-item .avatar { width:46px; height:46px; border:2px solid var(--gold); }
 .comite-bar .president-item .nom { color:#fff; font-weight:700; font-size:13.5px; }
 .comite-bar .president-item .fonction { color:var(--gold); font-size:11.5px; }
-.comite-bar .others-row { display:flex; gap:12px; overflow-x:auto; align-items:center; }
-.comite-bar .other-item { display:flex; flex-direction:column; align-items:center; gap:3px; flex-shrink:0; }
-.comite-bar .other-item .avatar { width:36px; height:36px; border:1.5px solid rgba(255,255,255,.4); }
-.comite-bar .other-item .nom { font-size:10px; color:#fff; text-align:center; max-width:56px; line-height:1.2; }
+.comite-bar .president-item .tel { color:#C9D4E0; font-size:11px; }
+.comite-bar .others-row { display:flex; gap:14px; overflow-x:auto; align-items:center; }
+.comite-bar .other-item { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.comite-bar .other-item .avatar { width:38px; height:38px; border:1.5px solid rgba(255,255,255,.4); }
+.comite-bar .other-item .nom { font-size:12.5px; color:#fff; font-weight:600; line-height:1.2; }
+.comite-bar .other-item .fonction { font-size:10.5px; color:var(--gold); line-height:1.2; }
+.comite-bar .other-item .tel { font-size:10px; color:#C9D4E0; line-height:1.2; }
 
 @media print {
   .no-print { display:none !important; }

@@ -192,7 +192,15 @@ espace :
 - Crée le compte de chaque président régional (un compte par région, avec
   possibilité de réinitialiser le mot de passe à tout moment)
 - Fixe le montant à collecter par région (ex. 5 000 000 GNF pour la Moyenne
-  Guinée)
+  Guinée). **Changer l'objectif d'une région remet automatiquement son
+  montant reçu à zéro et efface tout son historique de versements** — cela
+  démarre un nouveau cycle de cotisation proprement. Un message de
+  confirmation s'affiche avant de valider, pour éviter tout effacement
+  accidentel.
+- Peut aussi effacer l'historique manuellement à tout moment, sans changer
+  l'objectif : soit un versement précis, soit tout l'historique d'une
+  région d'un coup (bouton "Vider tout l'historique" dans l'écran
+  Historique de la région).
 - **Note lui-même les versements reçus physiquement de chaque région**
   (montant, date, note facultative), avec un historique consultable — la
   progression affichée partout (accueil public inclus) repose sur ces

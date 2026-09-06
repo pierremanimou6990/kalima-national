@@ -339,6 +339,10 @@ app.put("/api/regions/:region/objectif", auth("national"), async (req, res) => {
     .select()
     .single();
   if (error) return res.status(500).json({ error: error.message });
+  // Changer l'objectif démarre un nouveau cycle : l'historique des versements
+  // et le total collecté de cette région repartent à zéro.
+  const { error: resetError } = await supabase.from("versements_region").delete().eq("region", region);
+  if (resetError) return res.status(500).json({ error: resetError.message });
   res.json(data);
 });
 
@@ -375,6 +379,26 @@ app.get("/api/regions/:region/versements", auth("national", "regional"), async (
     .order("date_versement", { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ versements: data });
+});
+
+// Supprimer un versement précis de l'historique
+app.delete("/api/regions/:region/versements/:id", auth("national"), async (req, res) => {
+  const { error } = await supabase
+    .from("versements_region")
+    .delete()
+    .eq("id", req.params.id)
+    .eq("region", req.params.region);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Vider tout l'historique d'une région
+app.delete("/api/regions/:region/versements", auth("national"), async (req, res) => {
+  const { region } = req.params;
+  if (!REGIONS.includes(region)) return res.status(400).json({ error: "Région invalide" });
+  const { error } = await supabase.from("versements_region").delete().eq("region", region);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // Régional : voir la progression de sa propre région (lecture seule)
