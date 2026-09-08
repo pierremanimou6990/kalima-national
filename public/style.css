@@ -136,6 +136,7 @@ table.planning td input:focus { outline:1px solid var(--gold); border-radius:3px
   background: linear-gradient(160deg, var(--ink) 0%, #14283f 100%);
   box-shadow: 0 4px 18px rgba(31,58,95,.25);
 }
+.poster-camp .poster-affiche-img { width:100%; display:block; }
 .poster-camp .poster-top { padding:22px 20px 16px; text-align:center; }
 .poster-camp .poster-countdown {
   display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.12);

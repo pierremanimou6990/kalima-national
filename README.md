@@ -15,6 +15,7 @@ nouvelles tables sans toucher à tes données existantes :
 ```sql
 alter table camps add column if not exists theme text;
 alter table camps add column if not exists reference text;
+alter table camps add column if not exists photo_url text;
 
 create table if not exists versements_region (
   id uuid primary key default gen_random_uuid(),
@@ -106,6 +107,7 @@ redéploiera automatiquement.
      titre text not null,
      theme text,
      reference text,
+     photo_url text,
      date_debut date not null,
      date_fin date,
      lieu text,
@@ -211,8 +213,10 @@ espace :
   reçu sur l'objectif
 - Programme les camps : titre, **thème**, dates, lieu, description (avec
   aide pour ajouter des puces ; les emojis du clavier fonctionnent
-  directement), plusieurs orateurs avec photo, et un planning en tableau
-  entièrement libre (colonnes et lignes ajoutables à volonté)
+  directement), une **affiche à charger** (image déjà designée, affichée
+  en haut du camp partout où il apparaît, modifiable à tout moment),
+  plusieurs orateurs avec photo, et un planning en tableau entièrement
+  libre (colonnes et lignes ajoutables à volonté)
 - Publie des communiqués, visibles par tous dès l'écran d'accueil
 - Gère le **comité national** (jusqu'à 4 personnes) : nom, fonction dans
   le ministère des jeunes, téléphone, photo — affiché sur l'écran

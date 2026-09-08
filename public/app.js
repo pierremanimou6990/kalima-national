@@ -185,6 +185,7 @@ function campPosterHome(camp) {
   const jours = joursRestants(camp.date_debut);
   const poster = el(`
     <div class="poster-camp">
+      ${camp.photo_url ? `<img src="${camp.photo_url}" alt="${escapeHtml(camp.titre)}" class="poster-affiche-img" />` : ""}
       <div class="poster-top">
         <div class="poster-countdown">${jours === 0 ? "🎉 C'est aujourd'hui" : `J-<span class="n">${jours}</span>`}</div>
         <div class="poster-titre">${escapeHtml(camp.titre)}</div>
@@ -270,6 +271,7 @@ async function renderCampDetail(camp) {
   const wrap = el(`<div class="container"></div>`);
   const jours = joursRestants(camp.date_debut);
 
+  if (camp.photo_url) wrap.appendChild(el(`<img src="${camp.photo_url}" alt="${escapeHtml(camp.titre)}" style="width:100%; border-radius:12px; margin-bottom:16px;" />`));
   wrap.appendChild(el(`<div class="countdown">${jours <= 0 ? "🎉 En cours ou passé" : `J-<span class="n">${jours}</span>`}</div>`));
   if (camp.theme) wrap.appendChild(el(`<p class="camp-theme" style="font-size:16px; margin-bottom:8px;">« ${escapeHtml(camp.theme)} »</p>`));
   if (camp.reference) wrap.appendChild(el(`<p class="hint-text" style="margin-top:-8px;">${escapeHtml(camp.reference)}</p>`));
@@ -1156,6 +1158,31 @@ async function renderCampEditor(camp, onBack) {
   };
 
   if (!isNew) {
+    // Affiche du camp
+    wrap.appendChild(el(`<h2 class="section-h">Affiche du camp</h2>`));
+    wrap.appendChild(el(`<p class="hint-text">Charge une affiche déjà designée (photo ou image) — elle s'affichera en haut du camp sur l'écran d'accueil.</p>`));
+    const afficheWrap = el(`<div style="margin-bottom:20px;"></div>`);
+    function drawAffiche() {
+      afficheWrap.innerHTML = "";
+      if (camp.photo_url) {
+        afficheWrap.appendChild(el(`<img src="${camp.photo_url}" alt="" style="width:100%; border-radius:12px; margin-bottom:10px;" />`));
+      }
+      const label = el(`<label class="btn btn-gold" style="cursor:pointer; display:inline-flex;">${camp.photo_url ? "Changer l'affiche" : "＋ Charger une affiche"}<input type="file" accept="image/*" style="display:none;" /></label>`);
+      const fileInput = label.querySelector("input");
+      fileInput.onchange = async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("affiche", file);
+        const updated = await apiUpload(`/api/camps/${camp.id}/affiche`, fd);
+        Object.assign(camp, updated);
+        drawAffiche();
+      };
+      afficheWrap.appendChild(label);
+    }
+    drawAffiche();
+    wrap.appendChild(afficheWrap);
+
     // Orateurs
     wrap.appendChild(el(`<h2 class="section-h">Orateurs</h2>`));
     const orateursWrap = el(`<div></div>`);
@@ -1361,13 +1388,7 @@ async function renderNationalCommuniques() {
       wrap.appendChild(el(`<p class="empty">Aucun communiqué publié.</p>`));
     } else {
       communiques.forEach((c) => {
-        const card2 = el(`
-          <div class="communique-card">
-            <div class="titre">${escapeHtml(c.titre)}</div>
-            <div class="date">${formatDateFr(c.created_at.slice(0, 10))}</div>
-            <div class="contenu">${escapeHtml(c.contenu)}</div>
-          </div>
-        `);
+        const card2 = communiquePoster(c);
         const delBtn = el(`<button class="btn btn-danger-outline btn-sm" style="margin-top:8px;">Supprimer</button>`);
         delBtn.onclick = async () => {
           await api(`/api/communiques/${c.id}`, { method: "DELETE" });

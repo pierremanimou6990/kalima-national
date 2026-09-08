@@ -450,6 +450,21 @@ app.delete("/api/camps/:id", auth("national"), async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/camps/:id/affiche", auth("national"), upload.single("affiche"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Aucune image reçue" });
+  const ext = (req.file.mimetype.split("/")[1] || "jpg").replace("jpeg", "jpg");
+  const filePath = `affiche-camp-${req.params.id}.${ext}`;
+  const { error: uploadError } = await supabase.storage
+    .from(PHOTOS_BUCKET)
+    .upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+  if (uploadError) return res.status(500).json({ error: uploadError.message });
+  const { data: pub } = supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(filePath);
+  const photo_url = `${pub.publicUrl}?t=${Date.now()}`;
+  const { data, error } = await supabase.from("camps").update({ photo_url }).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 app.put("/api/camps/:id/planning", auth("national"), async (req, res) => {
   const { planning_columns, planning_rows } = req.body || {};
   const { data, error } = await supabase
